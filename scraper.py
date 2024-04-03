@@ -88,8 +88,7 @@ if __name__ == "__main__":
     t0 = time.time()
 
     # get root patent
-    # root_patent = input('Enter patent code: ')
-    root_patent = 'US11222684B2'
+    root_patent = input('Enter patent code: ')
 
     # add it to dict
     add_patent(root_patent, 'root', 0)
@@ -114,4 +113,4 @@ if __name__ == "__main__":
     print(df_sorted_patents)
     print(f'{t1-t0} seconds to download {len(df_patents)} patent codes.')
 
-    df_sorted_patents.to_csv(f'{root_patent}.csv')
+    df_sorted_patents.to_csv(f'output/{root_patent}.csv')
