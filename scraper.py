@@ -1,6 +1,6 @@
 # ~ Import packages ~ #
 from google_patent_scraper import scraper_class
-import json, time
+import json, time, os
 import pandas as pd
 import concurrent.futures
 from pprint import pprint
@@ -113,4 +113,7 @@ if __name__ == "__main__":
     print(df_sorted_patents)
     print(f'{t1-t0} seconds to download {len(df_patents)} patent codes.')
 
+    # save dataframe to output csv
+    if not os.path.exists('output/'):
+        os.makedirs('output/')
     df_sorted_patents.to_csv(f'output/{root_patent}.csv')
