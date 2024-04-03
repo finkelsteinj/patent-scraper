@@ -3,55 +3,66 @@ from google_patent_scraper import scraper_class
 import json, time
 import pandas as pd
 import concurrent.futures
-import pprint
+from pprint import pprint
 
 MAX_THREADS = 30
-
-root_patent = input('Enter patent code: ')
-
-scraper=scraper_class()
+scraper = scraper_class()
 
 patents = {
-    'patent_code': [root_patent],
-    'direction': ['root'],
-    'level': [0],
-    'count': [1],
-    'url': [f'https://patents.google.com/patent/{root_patent}']
+    'patent_code': [],
+    'direction': [],
+    'level': [],
+    'count': [],
+    'url': []
 }
 
-df_patents = pd.DataFrame(patents)
+def add_patent(code, dir, level):
+    patents['patent_code'].append(code)
+    patents['direction'].append(dir)
+    patents['level'].append(level)
+    patents['count'].append(1)
+    patents['url'].append(f'https://patents.google.com/patent/{code}')
 
-def update_count(code, dir, level, url):
-    if code in df_patents['patent_code'].values:
-        df_patents.loc[df_patents['patent_code'] == code, 'count'] += 1
+def update_count(code, dir, level):
+    if code in patents['patent_code']:
+        index = patents['patent_code'].index(code)
+        patents['count'][index] += 1
     else:
-        df_patents.loc[len(df_patents)] = [code, dir, level, 1, url]
+        add_patent(code, dir, level)
 
-def get_parent_patents(children, level):
-    parent_nums = []
-    err_1, soup_1, url_1 = scraper.request_single_patent(children)
-    parsed_child = scraper.get_scraped_data(soup_1,children,url_1)
+def get_parent_patents(child, level):
+    parent_codes = []
+    err_1, soup_1, url_1 = scraper.request_single_patent(child)
+    parsed_child = scraper.get_scraped_data(soup_1, child, url_1)
 
-    for parent_patent in json.loads(parsed_child['backward_cite_no_family']):
-        patent_number = parent_patent['patent_number']
-        err_2, soup_2, url_2 = scraper.request_single_patent(patent_number)
-        update_count(patent_number, 'parent', level, url_2)
-        parent_nums.append(patent_number)
+    for parent in json.loads(parsed_child['forward_cite_no_family']):
+        parent_code = parent['patent_number']
+        update_count(parent_code, 'parent', level)
+        parent_codes.append(parent_code)
     
-    return parent_nums
+    for parent in json.loads(parsed_child['forward_cite_yes_family']):
+        parent_code = parent['patent_number']
+        update_count(parent_code, 'parent', level)
+        parent_codes.append(parent_code)
+    
+    return parent_codes
 
-def get_child_patents(parents, level):
-    child_nums = []
-    err_1, soup_1, url_1 = scraper.request_single_patent(parents)
-    parsed_parent = scraper.get_scraped_data(soup_1,parents,url_1)
+def get_child_patents(parent, level):
+    child_codes = []
+    err_1, soup_1, url_1 = scraper.request_single_patent(parent)
+    parsed_parent = scraper.get_scraped_data(soup_1, parent, url_1)
+
+    for child in json.loads(parsed_parent['backward_cite_no_family']):
+        child_code = child['patent_number']
+        update_count(child_code, 'child', level)
+        child_codes.append(child_code)
     
-    for child_patent in json.loads(parsed_parent['forward_cite_no_family']):
-        patent_number = child_patent['patent_number']
-        err_2, soup_2, url_2 = scraper.request_single_patent(patent_number)
-        update_count(patent_number, 'child', level, url_2)
-        child_nums.append(patent_number)
-    
-    return child_nums
+    for child in json.loads(parsed_parent['backward_cite_yes_family']):
+        child_code = child['patent_number']
+        update_count(child_code, 'child', level)
+        child_codes.append(child_code)
+
+    return child_codes
 
 def get_patents(subpatents, level, is_parent):
     patent_codes = []
@@ -63,33 +74,44 @@ def get_patents(subpatents, level, is_parent):
     if is_parent:
         with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
             parent_codes = list(executor.map(get_child_patents, subpatents, levels))
-            # print(f'parent_codes = {parent_codes}')
-            if parent_codes:
-                patent_codes.extend(max(parent_codes, key=len))
+            flattened_parent_codes = [x for xs in parent_codes for x in xs]
+            patent_codes.extend(flattened_parent_codes)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
             child_codes = list(executor.map(get_parent_patents, subpatents, levels))
-            # print(f'child_codes = {child_codes}')
-            if child_codes:
-                patent_codes.extend(max(child_codes, key=len))
+            flattened_child_codes = [x for xs in child_codes for x in xs]
+            patent_codes.extend(flattened_child_codes)
     
     return patent_codes
 
 if __name__ == "__main__":
     t0 = time.time()
 
+    # get root patent
+    # root_patent = input('Enter patent code: ')
+    root_patent = 'US11222684B2'
+
+    # add it to dict
+    add_patent(root_patent, 'root', 0)
+
+    # get parent citations
+    print('--------------- PARENT CODES ---------------')
     parent_nums   = get_patents([root_patent], 1, True)
     gparent_nums  = get_patents(parent_nums, 2, True)
     ggparent_nums = get_patents(gparent_nums, 3, True)
 
+    # get child citations
+    print('-------------- CHILDREN CODES --------------')
     child_nums   = get_patents([root_patent], 1, False)
     gchild_nums  = get_patents(child_nums, 2, False)
     ggchild_nums = get_patents(gchild_nums, 3, False)
 
     t1 = time.time()
-
+    
+    df_patents = pd.DataFrame(patents, columns=['patent_code', 'direction', 'level', 'count', 'url'])
     df_sorted_patents = df_patents.sort_values(by=['count'], ascending=False)
-    pd.set_option('display.max_rows', None)
-    print(f'Total Count: {len(df_patents)}')
+
+    print(df_sorted_patents)
     print(f'{t1-t0} seconds to download {len(df_patents)} patent codes.')
-    df_sorted_patents.to_csv('patent_codes.csv')
+
+    df_sorted_patents.to_csv(f'{root_patent}.csv')
