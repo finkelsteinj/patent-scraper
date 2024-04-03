@@ -2,10 +2,10 @@
 from google_patent_scraper import scraper_class
 import json, time, os
 import pandas as pd
-import concurrent.futures
+from  concurrent.futures import ThreadPoolExecutor
 from pprint import pprint
 
-MAX_THREADS = 30
+MAX_THREADS = 20
 scraper = scraper_class()
 
 patents = {
@@ -31,6 +31,7 @@ def update_count(code, dir, level):
         add_patent(code, dir, level)
 
 def get_parent_patents(child, level):
+    # get forward (citing) patents
     parent_codes = []
     err_1, soup_1, url_1 = scraper.request_single_patent(child)
     parsed_child = scraper.get_scraped_data(soup_1, child, url_1)
@@ -48,6 +49,7 @@ def get_parent_patents(child, level):
     return parent_codes
 
 def get_child_patents(parent, level):
+    # get backward (cited) patents
     child_codes = []
     err_1, soup_1, url_1 = scraper.request_single_patent(parent)
     parsed_parent = scraper.get_scraped_data(soup_1, parent, url_1)
@@ -72,12 +74,12 @@ def get_patents(subpatents, level, is_parent):
     levels = [level] * len(subpatents)
     
     if is_parent:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+        with ThreadPoolExecutor(max_workers=threads) as executor:
             parent_codes = list(executor.map(get_child_patents, subpatents, levels))
             flattened_parent_codes = [x for xs in parent_codes for x in xs]
             patent_codes.extend(flattened_parent_codes)
     else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+        with ThreadPoolExecutor(max_workers=threads) as executor:
             child_codes = list(executor.map(get_parent_patents, subpatents, levels))
             flattened_child_codes = [x for xs in child_codes for x in xs]
             patent_codes.extend(flattened_child_codes)
